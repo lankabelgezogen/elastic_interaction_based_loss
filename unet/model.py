@@ -3,6 +3,7 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
@@ -241,7 +242,27 @@ class Model:
             else:
                 image_filename = '%s.png' % str(batch_idx + 1).zfill(3)
 
-            X_batch = Variable(X_batch.to(device=self.device))
-            y_out = self.net(X_batch).cpu().data.numpy()
+            X_batch = X_batch.to(device=self.device)
+            if X_batch.shape[1] == 4:
+                print(X_batch.shape)
+                X_batch = X_batch[:, 0:1, :, :]  # take only the first channel (e.g., R or grayscale)
 
-            io.imsave(os.path.join(export_path, image_filename), y_out[0, 1, :, :])
+            if X_batch.shape[2:] != (512, 512):
+                X_batch = F.interpolate(X_batch, size=(512, 512), mode='bilinear', align_corners=False)
+
+            X_batch = Variable(X_batch)
+            """ y_out = self.net(X_batch).cpu().data.numpy()
+
+            #io.imsave(os.path.join(export_path, image_filename), y_out[0, 1, :, :])
+
+            img = y_out[0, 1, :, :]
+            img = (img - img.min()) / (img.max() - img.min() + 1e-8)  # avoid division by zero
+            img_uint8 = (img * 255).astype(np.uint8) """
+            #io.imsave(os.path.join(export_path, image_filename), img_uint8)
+
+            with torch.no_grad():
+                logits = self.net(X_batch)[:, 0] # foreground logits
+                mask   = (torch.sigmoid(logits) > 0.55) # bool
+            mask_uint8 = mask.squeeze(0).cpu().numpy().astype(np.uint8)*255
+            io.imsave(os.path.join(export_path, image_filename), mask_uint8)
+            
